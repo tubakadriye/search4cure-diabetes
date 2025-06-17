@@ -1,0 +1,6 @@
+streamlit
+tqdm
+pymongo
+Pillow
+pandas
+google-cloud-storage
