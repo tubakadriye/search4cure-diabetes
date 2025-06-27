@@ -18,4 +18,4 @@ backend/multimodal/__pycache__/pdf_processing.cpython-312.pyc
 backend/utils/__pycache__/attribute_combiner.cpython-312.pyc
 backend/utils/__pycache__/csv_processing.cpython-312.pyc
 backend/utils/__pycache__/gcs_utils.cpython-312.pyc
-backend/utils/__pycache__/general_helpers.cpython-312.pyc
+backend/utils/__pycache__/general_helpers.cpython-312.pycnotebooks/multimodal_rag_mongodb_voyage_ai.ipynb
