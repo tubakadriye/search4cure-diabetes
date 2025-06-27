@@ -1,6 +1,9 @@
 # 🧠 Diabetes Research Assistant
-
+Visit:
 https://search4cure-diabetes.streamlit.app/ 
+
+Execution of the demo app:
+`streamlit run main.py`
 
 **Diabetes Research Assistant** is a Streamlit-based application that leverages LLM agents to help researchers, students, and practitioners discover and explore scientific publications focused on the use of machine learning methods in diabetes prediction, treatment, and care management.
 
@@ -20,6 +23,9 @@ This tool provides:
 - 🖥️ **User-Friendly Interface**: A clean, interactive UI built with [Streamlit](https://streamlit.io).
 
 ---
+
+
+
 
 
 

@@ -1,5 +1,10 @@
 #streamlit run main.py
 
+# === Agent Executor Setup ===
+from agent.agent_executer import build_agent_executor
+from graph.agent_graph import build_agent_graph, agent_node
+
+
 from tqdm import tqdm
 from db.mongo_utils import insert_df_to_mongodb
 from embeddings.gemini_text_embedding import get_gemini_embedding
@@ -21,16 +26,30 @@ from db.index_utils import create_vector_index, create_multivector_index
 from multimodal.pdf_processing import process_and_embed_docs
 import pandas as pd
 import datetime
+DB_NAME = "diabetes_data"
+response_collection = mongodb_client[DB_NAME]["responses"]
+
 
 from utils.general_helpers import print_dataframe_info
 
-# --- Setup ---
+# === Agent Execution Setup ===
+agent_executor = build_agent_executor()
+
+def chatbot_node(state):
+    return agent_node(state, agent_executor.agent, name="chatbot")
+
+def tool_node(state):
+    return agent_node(state, agent_executor.agent, name="tools")
+
+graph = build_agent_graph(chatbot_node, tool_node)
+
+# --- Streamlit UI Setup ---
 st.set_page_config(page_title="Search4Cure.AI: Diabetes", layout="wide")
 st.title("🔬 Search4Cure.AI: Diabetes")
 st.markdown("**Search4Cure.AI: Diabetes** is a multimodal research assistant designed to help you explore, analyze, and embed diabetes-related scientific documents, images, and datasets using AI-powered search and visualization.")
 
 
-# Setup MongoDB
+# --- MongoDB Setup ---
 db = mongodb_client["diabetes_data"]
 pdf_collection = db["docs_multimodal"]
 
@@ -38,6 +57,10 @@ pdf_collection = db["docs_multimodal"]
 # --- Session States ---
 for key in ["user_pdfs", "embedded_docs", "search_results"]:
     st.session_state.setdefault(key, [])
+
+# --- Human-in-the-Loop HITL Session Keys ---
+for key in ["agent_raw_response", "agent_approved_text", "agent_review_mode"]:
+    st.session_state.setdefault(key, "" if "response" in key else False)
 
 # --- Sidebar Upload ---
 with st.sidebar:
@@ -149,80 +172,87 @@ if search_button:
     if not query.strip():
         st.warning("Please enter a query.")
     else:
-        with st.spinner("Searching..."):
-            query_embedding = get_gemini_embedding([query])[0]
+        with st.spinner("Using Diabetes Research Asisstant Agent to answer..."):
+            agent_response = agent_executor.invoke({"input": query})  
+            response_text = agent_response.get("output", str(agent_response))
 
-            # Define the vector search pipeline
-            vector_search_stage = {
-                "$vectorSearch": {
-                    "index": "vector_index_with_filter",
-                    "compound": {
-                            "should": [
-                                {
-                                    "knnBeta": {
-                                        "vector": query_embedding,
-                                        "path": "clip_image_embedding",
-                                        "k": 5
-                                    }
-                                },
-                                {
-                                    "knnBeta": {
-                                        "vector": query_embedding,
-                                        "path": "clip_text_embedding",
-                                        "k": 5
-                                    }
-                                },
-                                {
-                                    "knnBeta": {
-                                        "vector": query_embedding,
-                                        "path": "sbert_text_embedding",
-                                        "k": 5
-                                    }
-                                }
-                            ]
-                        },
-                    "queryVector": query_embedding,
-                    "path": "embedding",
-                    "numCandidates": 150,  # Number of candidate matches to consider
-                    "limit": 5,  # Return top 4 matches
-                }
-            }
-
-            unset_stage = {
-                "$unset": "embedding"  # Exclude the 'embedding' field from the results
-            }
-
-            project_stage = {
-                "$project": {
-                    "_id": 0,  # Exclude the _id field,
-                    "combined_info": 1,
-                    "score": {
-                        "$meta": "vectorSearchScore"  # Include the search score
-                    },
-                }
-            }
-
-            pipeline = [vector_search_stage, unset_stage, project_stage]
-
-            # Execute the search
-            results = pdf_collection.aggregate(pipeline)
-
-            st.session_state.search_results = list(results)
-
-if st.session_state.search_results:
-    st.markdown("---")
-    st.markdown(f"### Results ({len(st.session_state.search_results)}):")
-    for doc in st.session_state.search_results:
-        title = doc.get("pdf_title", "Untitled")
-        url = doc.get("url", "")
-        st.write(f"**Title:** {title}")
-        if "image" in doc:
-            st.image(doc["image"], width=150)
-        if url:
-            st.write(f"Source URL: {url}")
-        st.write("---")
+        st.session_state.agent_raw_response = response_text
+        st.session_state.agent_review_mode = True  # activate HITL mode
 
 
+# --- Human-in-the-Loop Review Interface ---
+if st.session_state.agent_review_mode:
+    st.markdown("### 🤖 Suggested Answer by Agent")
+             
+    st.session_state.agent_approved_text = st.text_area(
+        "Edit or approve the agent's response:",
+        value=st.session_state.agent_raw_response,
+        height=200,
+        key="editable_response"
+    )
+
+        # if "agent_review_text" not in st.session_state:
+        #     st.session_state.agent_review_text = response_text
+
+        # st.text_area(
+        #     "Edit / Approve the response below:",
+        #     value=st.session_state.agent_review_text,
+        #     height=200,
+        #     key="agent_review_text_area"
+        # )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("✅ Approve"):
+            st.session_state.agent_review_mode = False
+            st.success("✅ Approved Response:")
+            st.markdown(f"**{st.session_state.agent_approved_text}**")
+            # Here you can save the approved response to a database/log
+            response_collection.insert_one({"query": query, "response": st.session_state.agent_approved_text})
+                # approved_text = st.session_state.agent_review_text_area
+                # # Save to MongoDB, or process as needed here
+                # st.session_state.approved_response = approved_text
+                # st.success("Response approved and saved!")
+                # st.markdown(f"**{approved_text}**")
+
+    with col2:
+        if st.button("🔄 Regenerate Agent Response"):
+            with st.spinner("Regenerating answer..."):
+                new_agent_response = agent_executor.invoke({"input": query})
+                new_response_text = new_agent_response.get("output", str(new_agent_response))
+                st.session_state.agent_approved_text = new_response_text
+                st.experimental_rerun()
+
+    # Expert input section
+    st.markdown("### 📝 Expert Input")
+    expert_input = st.text_area(
+        "Expert can edit or write their own answer below:",
+        value=st.session_state.agent_approved_text,
+        height=200,     
+        key="expert_response"
+        )
+
+    if st.button("✅ Submit Expert Answer"):
+        st.session_state.agent_approved_text = expert_input
+        st.session_state.agent_review_mode = False
+        st.success("✅ Expert-approved Response:")
+        st.markdown(f"**{st.session_state.agent_approved_text}**")
+        response_collection.insert_one({"query": query, "expert_input": st.session_state.agent_approved_text})
+
+
+        # approved_text = st.text_area("Edit / Approve the response below:", value=response_text, height=200)
+
+        # if st.button("✅ Approve & Submit Response"):
+        #     # Save approved_text somewhere, e.g., MongoDB or local variable
+        #     st.success("Response approved and saved!")
+        #     st.markdown(f"**{approved_text}**")
+
+
+            # st.success("Agent response:")
+            # st.markdown(f"**{response_text}**") 
+
+            
 
 
             
