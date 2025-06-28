@@ -6,7 +6,8 @@ from embeddings.gemini_text_embedding import get_gemini_embedding
 from embeddings.sbert import get_sbert_embedding
 from embeddings.voyage import get_voyage_embedding
 from utils.gcs_utils import get_image_from_gcs
-
+from db.mongodb_client import mongodb_client
+import os
 
 
 from typing import Union
@@ -19,8 +20,39 @@ from typing import List, Union
 from PIL import Image
 from io import BytesIO
 
+from google.cloud import storage
+from google.oauth2 import service_account
+import streamlit as st
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+path_to_credentials = os.getenv(PATH_TO_CREDENTIALS)
+
+credentials = service_account.Credentials.from_service_account_file(
+    path_to_credentials
+)
+
+DB_NAME = "diabetes_data"
+COLLECTION_NAME = "docs_multimodal"
 VS_INDEX_NAME = "multimodal_vector_index"
+# Set GCS project and bucket
+GCS_PROJECT = os.getenv("GCS_PROJECT")
+GCS_BUCKET = os.getenv("GCS_BUCKET")
 
+# Initialize your GCS client and bucket
+gcs_client = storage.Client(credentials=credentials, project=GCS_PROJECT)
+gcs_bucket = gcs_client.bucket(GCS_BUCKET)
+
+# Connect to the MongoDB collection
+collection = mongodb_client[DB_NAME][COLLECTION_NAME]
+
+
+llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash",
+                            temperature=0,
+                            max_tokens=None,
+                            timeout=None,
+                            max_retries=3,
+                            # other params...
+)
 def vector_search(
     user_query: Union[str, Image.Image],
     model: str,
