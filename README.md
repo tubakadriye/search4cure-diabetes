@@ -9,6 +9,7 @@ Execution of the demo app:
 Visit https://github.com/tubakadriye/search4cure-diabetes-deployment repo, for the deployment on Streamlit Cloud. 
 
 ![sample image](image.png)
+![sample image2](image-1.png)
 
 **Diabetes Research Assistant** is a Streamlit-based application that leverages LLM agents to help researchers, students, and practitioners discover and explore scientific publications focused on the use of machine learning methods in diabetes prediction, treatment, and care management.
 
